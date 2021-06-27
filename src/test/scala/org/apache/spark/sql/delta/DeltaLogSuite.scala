@@ -18,15 +18,15 @@ package org.apache.spark.sql.delta
 
 import java.io.{File, FileNotFoundException}
 
-import scala.language.postfixOps
+import org.apache.hadoop.fs.FileStatus
 
+import scala.language.postfixOps
 import org.apache.spark.sql.delta.DeltaOperations.Truncate
 import org.apache.spark.sql.delta.DeltaTestUtils.OptimisticTxnTestHelper
 import org.apache.spark.sql.delta.actions._
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.util.{FileNames, JsonUtils}
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.test.{SharedSparkSession, SQLTestUtils}
@@ -350,7 +350,8 @@ class DeltaLogSuite extends QueryTest
         {
           // Create an incomplete checkpoint without the action and overwrite the
           // original checkpoint
-          val checkpointPath = FileNames.checkpointFileSingular(log.logPath, log.snapshot.version)
+          val checkpointPaths: Seq[Path] = FileNames.checkpointFileWithParts(log.logPath, log.snapshot.version,
+            log.calculateCheckpointParts())
           withTempDir { tmpCheckpoint =>
             val takeAction = if (action == "metadata") {
               "protocol"
@@ -358,7 +359,7 @@ class DeltaLogSuite extends QueryTest
               "metadata"
             }
             val corruptedCheckpointData = spark.read.schema(SingleAction.encoder.schema)
-              .parquet(checkpointPath.toString)
+              .parquet(checkpointPaths.map(_.toString): _*)
               .where(s"add is not null or $takeAction is not null")
               .as[SingleAction].collect()
 
@@ -367,7 +368,8 @@ class DeltaLogSuite extends QueryTest
               .mode("overwrite").parquet(tmpCheckpoint.toString)
             val writtenCheckpoint =
               tmpCheckpoint.listFiles().toSeq.filter(_.getName.startsWith("part")).head
-            val checkpointFile = new File(checkpointPath.toUri)
+            val checkpointFile = new File(
+              FileNames.checkpointFileSingular(log.logPath, log.snapshot.version).toUri)
             new File(log.logPath.toUri).listFiles().toSeq.foreach { file =>
               if (file.getName.startsWith(".0")) {
                 // we need to delete checksum files, otherwise trying to replace our incomplete
@@ -375,7 +377,8 @@ class DeltaLogSuite extends QueryTest
                 require(file.delete(), "Failed to delete checksum file")
               }
             }
-            require(checkpointFile.delete(), "Failed to delete old checkpoint")
+            require(checkpointPaths.map(f => new File(f.toUri))
+              .forall(_.delete()), "Failed to delete old checkpoint")
             require(writtenCheckpoint.renameTo(checkpointFile),
               "Failed to rename corrupt checkpoint")
           }
@@ -430,9 +433,10 @@ class DeltaLogSuite extends QueryTest
 
       // Now let's delete the checkpoint and json file for version 1. We will try to list from
       // version 1, but since we can't find anything, we should start listing from version 0
-      deltaLog.store
-        .listFrom(FileNames.checkpointFileSingular(deltaLog.logPath, 1))
-        .foreach(f => deltaLog.fs.delete(f.getPath, false))
+      FileNames.checkpointFileWithParts(deltaLog.logPath, 1, deltaLog.calculateCheckpointParts())
+          .map(deltaLog.store.listFrom)
+          .foldLeft(Iterator[FileStatus]())(_ ++ _)
+          .foreach(f => deltaLog.fs.delete(f.getPath, false))
 
       checkAnswer(
         spark.read.format("delta").load(path),

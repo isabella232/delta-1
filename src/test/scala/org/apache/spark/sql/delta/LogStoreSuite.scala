@@ -162,7 +162,9 @@ abstract class LogStoreSuiteBase extends QueryTest
         val logStore = DeltaLog.forTable(spark, tempDir.getCanonicalPath)
         TrackingRenameFileSystem.numOfRename = 0
         logStore.checkpoint()
-        val expectedNumOfRename = if (shouldUseRenameToWriteCheckpoint) 1 else 0
+        val expectedNumOfRename = if (shouldUseRenameToWriteCheckpoint) {
+          logStore.calculateCheckpointParts()
+        } else 0
         assert(TrackingRenameFileSystem.numOfRename === expectedNumOfRename)
       }
     }

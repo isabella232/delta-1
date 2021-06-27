@@ -58,8 +58,13 @@ class DeltaTimeTravelSuite extends QueryTest
   }
 
   private def modifyCheckpointTimestamp(deltaLog: DeltaLog, version: Long, ts: Long): Unit = {
-    val file = new File(FileNames.checkpointFileSingular(deltaLog.logPath, version).toUri)
-    file.setLastModified(ts)
+    FileNames.checkpointFileWithParts(
+      deltaLog.logPath,
+      version,
+      deltaLog.calculateCheckpointParts()
+    )
+      .map(f => new File(f.toUri))
+      .foreach(f => f.setLastModified(ts))
   }
 
   /** Generate commits with the given timestamp in millis. */

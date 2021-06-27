@@ -120,6 +120,8 @@ trait Checkpoints extends DeltaLogging {
   /** The path to the file that holds metadata about the most recent checkpoint. */
   val LAST_CHECKPOINT = new Path(logPath, "_last_checkpoint")
 
+  def calculateCheckpointParts(): Int = 10
+
   /** Creates a checkpoint at the current log version. */
   def checkpoint(): Unit = recordDeltaOperation(this, "delta.checkpoint") {
     val snapshotToCheckpoint = snapshot
@@ -231,16 +233,21 @@ object Checkpoints extends DeltaLogging {
 
     val checkpointSize = spark.sparkContext.longAccumulator("checkpointSize")
     val numOfFiles = spark.sparkContext.longAccumulator("numOfFiles")
+    val checkpointParts = deltaLog.calculateCheckpointParts()
     // Use the string in the closure as Path is not Serializable.
-    val path = checkpointFileSingular(snapshot.path, snapshot.version).toString
+    val paths = checkpointFileWithParts(
+      snapshot.path,
+      snapshot.version,
+      checkpointParts
+    ).map(_.toString)
     val base = snapshot.state
-      .repartition(1)
+      .repartition(checkpointParts)
       .map { action =>
         if (action.add != null) {
           numOfFiles.add(1)
         }
         action
-      }.drop("commitInfo")
+      }.drop("commitInfo", "cdc")
 
     val chk = buildCheckpoint(base, snapshot)
     val schema = chk.schema.asNullable
@@ -252,14 +259,14 @@ object Checkpoints extends DeltaLogging {
         new SerializableConfiguration(job.getConfiguration))
     }
 
-    val writtenPath = chk
+    val writtenPaths = chk
       .queryExecution // This is a hack to get spark to write directly to a file.
       .executedPlan
       .execute()
-      .mapPartitions { iter =>
+      .mapPartitionsWithIndex { (idx, iter) =>
         val writtenPath =
           if (useRename) {
-            val p = new Path(path)
+            val p = new Path(paths(idx))
             // Two instances of the same task may run at the same time in some cases (e.g.,
             // speculation, stage retry), so generate the temp path here to avoid two tasks
             // using the same path.
@@ -267,7 +274,7 @@ object Checkpoints extends DeltaLogging {
             DeltaFileOperations.registerTempFileDeletionTaskFailureListener(serConf.value, tempPath)
             tempPath.toString
           } else {
-            path
+            paths(idx)
           }
         try {
           val writer = factory.newInstance(
@@ -292,25 +299,27 @@ object Checkpoints extends DeltaLogging {
               throw e
             }
         }
-        Iterator(writtenPath)
-      }.collect().head
+        Iterator((idx, writtenPath))
+      }.collect()
 
     if (useRename) {
-      val src = new Path(writtenPath)
-      val dest = new Path(path)
-      val fs = dest.getFileSystem(spark.sessionState.newHadoopConf)
-      var renameDone = false
-      try {
-        if (fs.rename(src, dest)) {
-          renameDone = true
-        } else {
-          // There should be only one writer writing the checkpoint file, so there must be
-          // something wrong here.
-          throw new IllegalStateException(s"Cannot rename $src to $dest")
-        }
-      } finally {
-        if (!renameDone) {
-          fs.delete(src, false)
+      writtenPaths.foreach { case (idx, writtenPath) =>
+        val src = new Path(writtenPath)
+        val dest = new Path(paths(idx))
+        val fs = dest.getFileSystem(spark.sessionState.newHadoopConf)
+        var renameDone = false
+        try {
+          if (fs.rename(src, dest)) {
+            renameDone = true
+          } else {
+            // There should be only one writer writing the checkpoint file, so there must be
+            // something wrong here.
+            throw new IllegalStateException(s"Cannot rename $src to $dest")
+          }
+        } finally {
+          if (!renameDone) {
+            fs.delete(src, false)
+          }
         }
       }
     }
@@ -324,7 +333,7 @@ object Checkpoints extends DeltaLogging {
     if (checkpointSize.value == 0) {
       logWarning(DeltaErrors.EmptyCheckpointErrorMessage)
     }
-    CheckpointMetaData(snapshot.version, checkpointSize.value, None)
+    CheckpointMetaData(snapshot.version, checkpointSize.value, Some(checkpointParts))
   }
 
   /**
