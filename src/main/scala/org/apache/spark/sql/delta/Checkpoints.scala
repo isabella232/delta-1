@@ -120,7 +120,11 @@ trait Checkpoints extends DeltaLogging {
   /** The path to the file that holds metadata about the most recent checkpoint. */
   val LAST_CHECKPOINT = new Path(logPath, "_last_checkpoint")
 
-  def calculateCheckpointParts(): Int = 10
+  def checkpointParts: Int = {
+    val maxRecordsPerCheckpointPart = DeltaConfigs.MAX_FILES_IN_CHECKPOINT_PART
+      .fromMetaData(snapshot.metadata)
+    Math.max((snapshot.numOfFiles + snapshot.numOfRemoves) / maxRecordsPerCheckpointPart, 1).toInt
+  }
 
   /** Creates a checkpoint at the current log version. */
   def checkpoint(): Unit = recordDeltaOperation(this, "delta.checkpoint") {
@@ -233,7 +237,7 @@ object Checkpoints extends DeltaLogging {
 
     val checkpointSize = spark.sparkContext.longAccumulator("checkpointSize")
     val numOfFiles = spark.sparkContext.longAccumulator("numOfFiles")
-    val checkpointParts = deltaLog.calculateCheckpointParts()
+    val checkpointParts = deltaLog.checkpointParts
     // Use the string in the closure as Path is not Serializable.
     val paths = checkpointFileWithParts(
       snapshot.path,

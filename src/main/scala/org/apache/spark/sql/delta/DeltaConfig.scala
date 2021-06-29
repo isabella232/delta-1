@@ -417,4 +417,14 @@ object DeltaConfigs extends DeltaLogging {
     v => Option(v).map(_.toBoolean),
     _ => true,
     "needs to be a boolean.")
+
+  /**
+   * The max number of records (add/remove) per checkpoint part.
+   */
+  val MAX_FILES_IN_CHECKPOINT_PART = buildConfig[Int](
+    "checkpoint.maxRecordsPerPart",
+    "1000000",
+    _.toInt,
+    a => a >= 1,
+    "needs to be larger than or equal to 1.")
 }

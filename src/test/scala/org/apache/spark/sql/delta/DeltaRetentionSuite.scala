@@ -69,7 +69,7 @@ class DeltaRetentionSuite extends QueryTest with DeltaRetentionSuiteBase with SQ
       log.checkpoint()
 
       val expectedFiles = Seq("04.json") ++ FileNames.checkpointFileWithParts(log.logPath, 4L,
-        log.calculateCheckpointParts()).map(_.getName)
+        log.checkpointParts).map(_.getName)
       // after checkpointing, the files should be cleared
       log.cleanUpExpiredLogs()
       val afterCleanup = getLogFiles(logPath)
@@ -98,7 +98,7 @@ class DeltaRetentionSuite extends QueryTest with DeltaRetentionSuiteBase with SQ
         deltaFile.setLastModified(clock.getTimeMillis() + i * 10000)
         val crcFile = new File(FileNames.checksumFile(log.logPath, version).toUri)
         crcFile.setLastModified(clock.getTimeMillis() + i * 10000)
-        FileNames.checkpointFileWithParts(log.logPath, version, log.calculateCheckpointParts())
+        FileNames.checkpointFileWithParts(log.logPath, version, log.checkpointParts)
           .map(f => new File(f.toUri))
           .filter(_.exists())
           .foreach(_.setLastModified(clock.getTimeMillis() + i * 10000))
@@ -121,7 +121,7 @@ class DeltaRetentionSuite extends QueryTest with DeltaRetentionSuiteBase with SQ
         FileNames.checkpointFileWithParts(
           log.logPath,
           log.snapshot.version,
-          log.calculateCheckpointParts()
+          log.checkpointParts
         ).length
         ,
         "There should only be the last checkpoint version")

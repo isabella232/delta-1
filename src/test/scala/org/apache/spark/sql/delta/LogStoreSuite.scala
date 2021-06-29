@@ -163,7 +163,7 @@ abstract class LogStoreSuiteBase extends QueryTest
         TrackingRenameFileSystem.numOfRename = 0
         logStore.checkpoint()
         val expectedNumOfRename = if (shouldUseRenameToWriteCheckpoint) {
-          logStore.calculateCheckpointParts()
+          logStore.checkpointParts
         } else 0
         assert(TrackingRenameFileSystem.numOfRename === expectedNumOfRename)
       }
