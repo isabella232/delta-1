@@ -351,7 +351,7 @@ class DeltaLogSuite extends QueryTest
           // Create an incomplete checkpoint without the action and overwrite the
           // original checkpoint
           val checkpointPaths: Seq[Path] = FileNames.checkpointFileWithParts(log.logPath, log.snapshot.version,
-            log.checkpointParts)
+            log.numberOfCheckpointParts)
           withTempDir { tmpCheckpoint =>
             val takeAction = if (action == "metadata") {
               "protocol"
@@ -433,7 +433,7 @@ class DeltaLogSuite extends QueryTest
 
       // Now let's delete the checkpoint and json file for version 1. We will try to list from
       // version 1, but since we can't find anything, we should start listing from version 0
-      FileNames.checkpointFileWithParts(deltaLog.logPath, 1, deltaLog.checkpointParts)
+      FileNames.checkpointFileWithParts(deltaLog.logPath, 1, deltaLog.numberOfCheckpointParts)
           .map(deltaLog.store.listFrom)
           .foldLeft(Iterator[FileStatus]())(_ ++ _)
           .foreach(f => deltaLog.fs.delete(f.getPath, false))

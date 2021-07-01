@@ -421,7 +421,7 @@ object DeltaConfigs extends DeltaLogging {
   /**
    * The max number of records (add/remove) per checkpoint part.
    */
-  val MAX_FILES_IN_CHECKPOINT_PART = buildConfig[Int](
+  val MAX_RECORDS_PER_CHECKPOINT_PART = buildConfig[Int](
     "checkpoint.maxRecordsPerPart",
     "1000000",
     _.toInt,

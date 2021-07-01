@@ -61,7 +61,7 @@ class DeltaTimeTravelSuite extends QueryTest
     FileNames.checkpointFileWithParts(
       deltaLog.logPath,
       version,
-      deltaLog.checkpointParts
+      deltaLog.numberOfCheckpointParts
     )
       .map(f => new File(f.toUri))
       .foreach(f => f.setLastModified(ts))
