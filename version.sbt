@@ -1,1 +1,1 @@
-version in ThisBuild := "0.8.0-appsflyer-2"
+version in ThisBuild := "0.8.0-appsflyer-1"
